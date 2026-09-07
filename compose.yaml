@@ -46,20 +46,17 @@ services:
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/no-default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Каталог, который entrypoint образа выполняет перед запуском nginx. Разбор — в самом файле.
+      - ./nginx/reload.sh:/docker-entrypoint.d/99-reload.sh:ro
       - certs:/etc/letsencrypt:ro
       - acme:/var/www/acme:ro
     networks:
       - windshift
       - neurobox
-    command:
-      - sh
-      - -c
-      - |
-        # Сертификат живёт неделю, и продлевает его сосед по этому же compose. nginx читает
-        # файлы ОДИН раз при старте — без перечитывания он продолжал бы отдавать просроченный,
-        # имея свежий на диске в полуметре.
-        while :; do sleep 6h & wait $!; nginx -s reload 2>/dev/null; done &
-        exec nginx -g 'daemon off;'
+    # Команда НЕ переопределяется намеренно: entrypoint образа подставляет переменные в шаблоны
+    # только если команда начинается с `nginx`. Подмени её — и конфигурация досталась бы nginx с
+    # неподставленным именем машины, то есть с несуществующим путём к сертификату. Перечитывание
+    # по кругу живёт отдельным файлом в /docker-entrypoint.d.
 
   # Продление. Через файл на диске, который отдаёт живой nginx, а НЕ занимая порт: старый способ
   # ронял вход на время продления, то есть раз в несколько дней сайт на минуту исчезал.
@@ -71,8 +68,10 @@ services:
     volumes:
       - certs:/etc/letsencrypt
       - acme:/var/www/acme
+    # Точка входа образа — сам certbot, поэтому под цикл её приходится сменить: иначе команда
+    # ниже досталась бы ему как аргументы и он бы на них споткнулся.
+    entrypoint: /bin/sh
     command:
-      - sh
       - -c
       - |
         trap exit TERM
