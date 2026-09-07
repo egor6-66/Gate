@@ -4,8 +4,8 @@
 # сертификат означал бы, что добавление соседа требует ещё одной выдачи. Объявление стоит здесь,
 # на уровне всего http, и достаётся каждому серверу ниже само.
 
-ssl_certificate     /etc/letsencrypt/live/${GATE_HOST}/fullchain.pem;
-ssl_certificate_key /etc/letsencrypt/live/${GATE_HOST}/privkey.pem;
+ssl_certificate     /certs/certificates/${GATE_HOST}.crt;
+ssl_certificate_key /certs/certificates/${GATE_HOST}.key;
 
 ssl_protocols TLSv1.2 TLSv1.3;
 ssl_session_cache shared:SSL:10m;
