@@ -1,0 +1,16 @@
+# Порт 80: только две вещи, и обе служебные. Продуктов здесь нет — за ними идут по https.
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    # Проверка владения именем при выпуске и продлении сертификата. Ходит ТОЛЬКО по 80 порту и
+    # только по этому пути — поэтому он и открыт, тогда как всё остальное отсюда уезжает на https.
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

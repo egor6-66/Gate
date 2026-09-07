@@ -1,0 +1,99 @@
+# Вход машины. Единственный поддерживаемый способ запуска.
+#
+# Здесь нет ни одного продукта — только nginx с картой и certbot с сертификатом. Всё, что за
+# входом, живёт своей жизнью, в своих репозиториях и со своим циклом выпуска.
+
+name: gate
+
+services:
+  # Первичная выдача сертификата. Разовым запуском и ДО nginx: без сертификата nginx не
+  # поднимется вовсе, а уже поднятый занял бы порт, который нужен проверке владения.
+  #
+  # network_mode: host — проверка приходит на 80 порт САМОЙ машины, и другого способа занять
+  # его на минуту у контейнера нет. К этому моменту nginx ещё не стартовал, так что порт свободен.
+  #
+  # Повторный запуск безвреден: при живом сертификате certbot ничего не делает и выходит успехом.
+  # Поэтому шаг стоит в обычном подъёме, а не в отдельной инструкции, которую забудут выполнить.
+  issue:
+    image: certbot/certbot:latest
+    network_mode: host
+    volumes:
+      - certs:/etc/letsencrypt
+    command: >
+      certonly --standalone --non-interactive --agree-tos
+      --email ${ACME_EMAIL:?нужна почта для сертификата, смотри .env.example}
+      --key-type ecdsa --keep-until-expiring
+      --preferred-profile shortlived
+      -d ${GATE_HOST:?нужно имя машины, смотри .env.example}
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      issue:
+        # Не «контейнер запущен», а «выдача закончилась успехом»: иначе nginx стартует раньше
+        # сертификата и падает на его отсутствии.
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"
+    environment:
+      GATE_HOST: ${GATE_HOST}
+      # Подстановка ТОЛЬКО в свои переменные. Без этого фильтра образ подставил бы и `$host`
+      # с `$remote_addr` — то есть съел бы половину конфигурации nginx.
+      NGINX_ENVSUBST_FILTER: "^GATE_"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/no-default.conf:/etc/nginx/conf.d/default.conf:ro
+      - certs:/etc/letsencrypt:ro
+      - acme:/var/www/acme:ro
+    networks:
+      - windshift
+      - neurobox
+    command:
+      - sh
+      - -c
+      - |
+        # Сертификат живёт неделю, и продлевает его сосед по этому же compose. nginx читает
+        # файлы ОДИН раз при старте — без перечитывания он продолжал бы отдавать просроченный,
+        # имея свежий на диске в полуметре.
+        while :; do sleep 6h & wait $!; nginx -s reload 2>/dev/null; done &
+        exec nginx -g 'daemon off;'
+
+  # Продление. Через файл на диске, который отдаёт живой nginx, а НЕ занимая порт: старый способ
+  # ронял вход на время продления, то есть раз в несколько дней сайт на минуту исчезал.
+  renew:
+    image: certbot/certbot:latest
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    volumes:
+      - certs:/etc/letsencrypt
+      - acme:/var/www/acme
+    command:
+      - sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --webroot -w /var/www/acme --quiet
+          sleep 12h & wait $!
+        done
+
+volumes:
+  certs:
+  acme:
+
+# Сети соседей. ВНЕШНИЕ: их заводит сосед, а вход только подключается — иначе вход владел бы
+# чужой сетью и уносил её с собой, уходя.
+#
+# Цена названа прямо: без этих сетей вход не поднимется. Карта, ведущая в место, которого нет,
+# — это не работающий вход с одним потерянным соседом, это неправда в конфигурации.
+networks:
+  windshift:
+    external: true
+    name: windshift-net
+  neurobox:
+    external: true
+    name: neurobox_default
