@@ -17,14 +17,33 @@ services:
   issue:
     image: certbot/certbot:latest
     network_mode: host
+    environment:
+      GATE_HOST: ${GATE_HOST:?нужно имя машины, смотри .env.example}
+      ACME_EMAIL: ${ACME_EMAIL:?нужна почта для сертификата, смотри .env.example}
     volumes:
       - certs:/etc/letsencrypt
-    command: >
-      certonly --standalone --non-interactive --agree-tos
-      --email ${ACME_EMAIL:?нужна почта для сертификата, смотри .env.example}
-      --key-type ecdsa --keep-until-expiring
-      --preferred-profile shortlived
-      -d ${GATE_HOST:?нужно имя машины, смотри .env.example}
+    # Точка входа образа — сам certbot, а нам нужна проверка перед ним.
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # Сертификат уже лежит — выдавать нечего, продлением занимается сосед по этому compose.
+        #
+        # Проверка стоит ДО certbot, и это не оптимизация. Выпуск НОВОГО сертификата на голый
+        # АДРЕС (в отличие от домена) certbot здесь отказывается делать — при том что ПРОДЛЕНИЕ
+        # уже существующего проходит, и это проверено вхолостую. Без этой ветки подъём падал бы
+        # на машине, где сертификат давно лежит рядом, причём не единожды, а при каждом
+        # перезапуске.
+        #
+        # Следствие, которое надо знать заранее: потеряв том с сертификатом на машине без домена,
+        # выпустить новый отсюда не выйдет — это делается снаружи, тем же certbot на самой
+        # машине. С доменом такой оговорки нет.
+        if [ -s "/etc/letsencrypt/live/$$GATE_HOST/fullchain.pem" ]; then
+          echo "сертификат на месте, выдача не нужна"
+          exit 0
+        fi
+
+        exec certbot certonly --standalone --non-interactive --agree-tos           --email "$$ACME_EMAIL" --key-type ecdsa --keep-until-expiring           --preferred-profile shortlived -d "$$GATE_HOST"
 
   nginx:
     image: nginx:1.27-alpine
