@@ -56,7 +56,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8443:8443"
     environment:
       GATE_HOST: ${GATE_HOST}
       # Подстановка ТОЛЬКО в свои переменные. Без этого фильтра образ подставил бы и `$host`
@@ -70,7 +69,6 @@ services:
       - certs:/etc/letsencrypt:ro
       - acme:/var/www/acme:ro
     networks:
-      - windshift
       - neurobox
     # Команда НЕ переопределяется намеренно: entrypoint образа подставляет переменные в шаблоны
     # только если команда начинается с `nginx`. Подмени её — и конфигурация досталась бы nginx с
@@ -109,9 +107,6 @@ volumes:
 # Цена названа прямо: без этих сетей вход не поднимется. Карта, ведущая в место, которого нет,
 # — это не работающий вход с одним потерянным соседом, это неправда в конфигурации.
 networks:
-  windshift:
-    external: true
-    name: windshift-net
   neurobox:
     external: true
     name: neurobox_default
