@@ -33,7 +33,9 @@ services:
           exit 0
         fi
 
-        exec lego run --accept-tos --email "$$ACME_EMAIL" --path /certs \
+        # Бинарь зовётся по полному пути: в образе он лежит в корне, а не в путях поиска, и при
+        # смене точки входа перестаёт находиться по имени.
+        exec /lego run --accept-tos --email "$$ACME_EMAIL" --path /certs \
           --key-type ec256 --profile shortlived --domains "$$GATE_HOST" \
           --http --http.address :80
 
@@ -87,7 +89,8 @@ services:
       - |
         trap exit TERM
         while :; do
-          lego run --accept-tos --email "$$ACME_EMAIL" --path /certs \
+          # Полный путь: в образе бинарь лежит в корне, а не в путях поиска.
+          /lego run --accept-tos --email "$$ACME_EMAIL" --path /certs \
             --key-type ec256 --profile shortlived --domains "$$GATE_HOST" \
             --http --http.webroot /var/www/acme || true
           sleep 12h & wait $$!
